@@ -1,12 +1,14 @@
-from cmath import log
-from django.shortcuts import render, HttpResponse,redirect
+from email import message
+from multiprocessing import context
+from django.shortcuts import render, HttpResponse, redirect
 from django.db.models import Q
-from .models import Room, Topic
+from .models import Room, Topic, Message
 from .forms import RoomForm
 from django.contrib.auth.models import User
 from django.contrib import messages
-from django.contrib.auth import authenticate,login,logout
+from django.contrib.auth import authenticate, login, logout
 from django.contrib.auth.decorators import login_required
+from django.contrib.auth.forms import UserCreationForm
 
 
 
@@ -14,24 +16,41 @@ def home(request):
     q = request.GET.get('q') or ""
     rooms = Room.objects.filter(
         Q(topic__name__icontains=q) |
-        Q(name__icontains=q)|
+        Q(name__icontains=q) |
         Q(description__icontains=q)
-        )
+    )
     topics = Topic.objects.all()
     room_count = rooms.count()
     context = {
-        'rooms':rooms,
-        'topics':topics,
-        'room_count':room_count,
-        'q':q
+        'rooms': rooms,
+        'topics': topics,
+        'room_count': room_count,
+        'q': q
     }
 
     return render(request, 'base/home.html', context=context)
 
 
-def room(request,pk):
+def room(request, pk):
     room = Room.objects.get(id=pk)
-    return render(request, 'base/room.html', {'room':room})
+    room_messages = room.message_set.all().order_by('-created')
+    participants = room.participants.all()
+
+    if request.method == 'POST':
+        message = Message.objects.create(
+            user = request.user,
+            room = room,
+            body = request.POST.get('body')
+        )
+        room.participants.add(request.user)
+        return redirect('room', pk=room.id)
+
+    context = {
+        'room': room,
+        'room_messages': room_messages,
+        'participants': participants,
+    }
+    return render(request, 'base/room.html', context=context)
 
 
 @login_required(login_url='login')
@@ -43,12 +62,13 @@ def create_room(request):
             form.save()
             return redirect('home')
     context = {
-        'form':form,
+        'form': form,
     }
     return render(request, 'base/room_form.html', context=context)
 
+
 @login_required(login_url='login')
-def update_room(request,pk):
+def update_room(request, pk):
     room = Room.objects.get(id=pk)
     form = RoomForm(instance=room)
 
@@ -61,12 +81,13 @@ def update_room(request,pk):
             form.save()
             return redirect('home')
     context = {
-        'form':form,
+        'form': form,
     }
     return render(request, 'base/room_form.html', context=context)
 
+
 @login_required(login_url='login')
-def delete_room(request,pk):
+def delete_room(request, pk):
     room = Room.objects.get(id=pk)
 
     if request.user != room.host:
@@ -76,16 +97,17 @@ def delete_room(request,pk):
         room.delete()
         return redirect('home')
     context = {
-        'obj':room
+        'obj': room
     }
     return render(request, 'base/delete.html', context=context)
 
 
 def login_page(request):
-    
+
+    page = 'login'
     if request.user.is_authenticated:
         return redirect('home')
-    
+
     if request.method == 'POST':
         username = request.POST.get('username')
         password = request.POST.get('password')
@@ -93,19 +115,45 @@ def login_page(request):
         try:
             user = User.objects.get(username=username)
         except:
-            messages.error(request=request,message='User does not exists')
-        
-        user = authenticate(request=request, username=username, password=password)
+            messages.error(request=request, message='User does not exists')
+
+        user = authenticate(
+            request=request, username=username, password=password)
         if user is not None:
             login(request=request, user=user)
             return redirect('home')
         else:
-            messages.error(request=request,message='Username or password does not exists')
-    
-    context={}
+            messages.error(request=request,
+                           message='Username or password does not exists')
+
+    context = {
+        'page': page
+    }
     return render(request, 'base/login_register.html', context=context)
 
 
 def logout_page(request):
     logout(request=request)
     return redirect('home')
+
+
+def register_page(request):
+    page = 'register'
+    form = UserCreationForm()
+
+    if request.method == 'POST':
+        form = UserCreationForm(request.POST)
+        if form.is_valid():
+            user = form.save(commit=False)
+            user.username = user.username.lower()
+            user.save()
+            login(request=request, user=user)
+            return redirect('home')
+        else:
+            messages.error(request=request, message="An error occured during registration")
+    context = {
+            'page': page,
+            'form': form,
+        }
+    return render(request, 'base/login_register.html', context=context)
+
