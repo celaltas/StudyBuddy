@@ -1,7 +1,12 @@
+from cmath import log
 from django.shortcuts import render, HttpResponse,redirect
 from django.db.models import Q
 from .models import Room, Topic
 from .forms import RoomForm
+from django.contrib.auth.models import User
+from django.contrib import messages
+from django.contrib.auth import authenticate,login,logout
+from django.contrib.auth.decorators import login_required
 
 
 
@@ -29,6 +34,7 @@ def room(request,pk):
     return render(request, 'base/room.html', {'room':room})
 
 
+@login_required(login_url='login')
 def create_room(request):
     form = RoomForm()
     if request.method == 'POST':
@@ -41,10 +47,14 @@ def create_room(request):
     }
     return render(request, 'base/room_form.html', context=context)
 
-
+@login_required(login_url='login')
 def update_room(request,pk):
     room = Room.objects.get(id=pk)
     form = RoomForm(instance=room)
+
+    if request.user != room.host:
+        return HttpResponse("You are not allowed to update this room")
+
     if request.method == 'POST':
         form = RoomForm(request.POST, instance=room)
         if form.is_valid():
@@ -55,9 +65,13 @@ def update_room(request,pk):
     }
     return render(request, 'base/room_form.html', context=context)
 
-
+@login_required(login_url='login')
 def delete_room(request,pk):
     room = Room.objects.get(id=pk)
+
+    if request.user != room.host:
+        return HttpResponse("You are not allowed to update this room")
+
     if request.method == 'POST':
         room.delete()
         return redirect('home')
@@ -66,3 +80,32 @@ def delete_room(request,pk):
     }
     return render(request, 'base/delete.html', context=context)
 
+
+def login_page(request):
+    
+    if request.user.is_authenticated:
+        return redirect('home')
+    
+    if request.method == 'POST':
+        username = request.POST.get('username')
+        password = request.POST.get('password')
+
+        try:
+            user = User.objects.get(username=username)
+        except:
+            messages.error(request=request,message='User does not exists')
+        
+        user = authenticate(request=request, username=username, password=password)
+        if user is not None:
+            login(request=request, user=user)
+            return redirect('home')
+        else:
+            messages.error(request=request,message='Username or password does not exists')
+    
+    context={}
+    return render(request, 'base/login_register.html', context=context)
+
+
+def logout_page(request):
+    logout(request=request)
+    return redirect('home')
