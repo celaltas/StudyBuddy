@@ -1,9 +1,8 @@
-from email import message
-from multiprocessing import context
+
 from django.shortcuts import render, HttpResponse, redirect
 from django.db.models import Q
 from .models import Room, Topic, Message
-from .forms import RoomForm
+from .forms import RoomForm, UserForm
 from django.contrib.auth.models import User
 from django.contrib import messages
 from django.contrib.auth import authenticate, login, logout
@@ -198,3 +197,19 @@ def user_profile(request,pk):
         'room_messages':room_messages,
     }
     return render(request, 'base/profile.html', context=context)
+
+
+
+@login_required(login_url='login')
+def update_user(request):
+    form =UserForm(instance=request.user)
+    if request.method == 'POST':
+        form = UserForm(request.POST, instance=request.user)
+        if form.is_valid:
+            form.save()
+            return redirect('user-profile', pk=request.user.id)
+
+    context={
+        'form':form
+    }
+    return render(request, 'base/update-user.html', context=context)
